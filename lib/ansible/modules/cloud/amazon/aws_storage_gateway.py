@@ -286,7 +286,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
     if resource_type == 'gateway':
         try:
             gw_response = client.activate_gateway(**params)
-            time.sleep(5) # Need a waiter here but it doesn't exist yet in the StorageGateway API
+            time.sleep(5)  # Need a waiter here but it doesn't exist yet in the StorageGateway API
             disks_response = client.list_local_disks(
                 GatewayARN=gw_response['GatewayARN']
             )
@@ -342,7 +342,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
                     'VolumeARN': vol_response['VolumeARN']
                 }
             )
-            result['VolumeARN''] = vol_response['VolumeARN']
+            result['VolumeARN'] = vol_response['VolumeARN']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -361,7 +361,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
                     'VolumeARN': vol_response['VolumeARN']
                 }
             )
-            result['VolumeARN''] = vol_response['VolumeARN']
+            result['VolumeARN'] = vol_response['VolumeARN']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
