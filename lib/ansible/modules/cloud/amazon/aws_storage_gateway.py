@@ -215,6 +215,8 @@ this is a test
 
 RETURN = r'''#'''
 
+import time
+
 try:
     import botocore
     from botocore.exceptions import BotoCoreError, ClientError
@@ -284,7 +286,35 @@ def create_resource(client, tagger, module, resource_type, params, result):
     if resource_type == 'gateway':
         try:
             gw_response = client.activate_gateway(**params)
-            result['ARN'] = gw_response['GatewayARN']
+            time.sleep(5) # Need a waiter here but it doesn't exist yet in the StorageGateway API
+            disks_response = client.list_local_disks(
+                GatewayARN=gw_response['GatewayARN']
+            )
+            if disks_response['Disks']:
+                if params['GatewayType'] == 'FILE_S3':
+                    vol_response = client.add_cache(
+                        GatewayARN=gw_response['GatewayARN'],
+                        DiskIds=[disks_response['Disks'][0]['DiskId']]
+                    )
+                if params['GatewayType'] == 'CACHED' or params['GatewayType'] == 'VTL':
+                    vol_response = client.add_cache(
+                        GatewayARN=gw_response['GatewayARN'],
+                        DiskIds=[disks_response['Disks'][0]['DiskId']]
+                    )
+                    vol_response = client.add_upload_buffer(
+                        GatewayARN=gw_response['GatewayARN'],
+                        DiskIds=[disks_response['Disks'][1]['DiskId']]
+                    )
+                if params['GatewayType'] == 'STORED':
+                    vol_response = client.add_upload_buffer(
+                        GatewayARN=gw_response['GatewayARN'],
+                        DiskIds=[disks_response['Disks'][0]['DiskId']]
+                    )
+                    vol_response = client.add_working_storage(
+                        GatewayARN=gw_response['GatewayARN'],
+                        DiskIds=[disks_response['Disks'][1]['DiskId']]
+                    )
+            result['GatewayARN'] = gw_response['GatewayARN']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -293,7 +323,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
     if resource_type == 'nfs_file_share':
         try:
             fs_response = client.create_nfs_file_share(**params)
-            result['ARN'] = fs_response['FileShareARN']
+            result['FileShareARN'] = fs_response['FileShareARN']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -312,7 +342,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
                     'VolumeARN': vol_response['VolumeARN']
                 }
             )
-            result['ARN'] = vol_response['VolumeARN']
+            result['VolumeARN''] = vol_response['VolumeARN']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -331,7 +361,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
                     'VolumeARN': vol_response['VolumeARN']
                 }
             )
-            result['ARN'] = vol_response['VolumeARN']
+            result['VolumeARN''] = vol_response['VolumeARN']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -340,7 +370,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
     if resource_type == 'tape':
         try:
             tp_response = client.create_tape_with_barcode(**params)
-            result['ARN'] = tp_response['TapeARN']
+            result['TapeARN'] = tp_response['TapeARN']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -349,7 +379,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
     if resource_type == 'tape_group':
         try:
             tp_response = client.create_tapes(**params)
-            result['ARNs'] = tp_response['TapeARNs']
+            result['TapeARNs'] = tp_response['TapeARNs']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -375,7 +405,7 @@ def update_resource(client, module, resource_type, params, result):
                     GatewayName=params['GatewayName'],
                     GatewayTimezone=params['GatewayTimezone']
                 )
-                result['ARN'] = response['GatewayARN']
+                result['GatewayARN'] = response['GatewayARN']
                 result['changed'] = True
                 return result
             except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -409,7 +439,7 @@ def update_resource(client, module, resource_type, params, result):
                     GuessMIMETypeEnabled=params['GuessMIMETypeEnabled'],
                     RequesterPays=params['RequesterPays']
                 )
-                result['ARN'] = response['FileShareARN']
+                result['FileShareARN'] = response['FileShareARN']
                 result['changed'] = True
                 return result
             except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -452,6 +482,7 @@ def delete_resource(client, module, resource_type, params, result):
     if resource_type == 'tape':
         try:
             response = client.delete_tape(
+                GatewayARN=params['GatewayARN'],
                 TapeARN=result['TapeARN']
             )
             result['changed'] = True
@@ -527,9 +558,7 @@ def main():
     )
 
     result = {
-        'changed': False,
-        'ARN': '',
-        'ARNs': []
+        'changed': False
     }
 
     state = module.params.get('state')
@@ -669,12 +698,7 @@ def main():
         if resource_status:
             delete_resource(client, module, resource_type, params, result)
 
-    if result['ARN']:
-        module.exit_json(changed=result['changed'], resource_arn=result['ARN'])
-    elif result['ARNs']:
-        module.exit_json(changed=result['changed'], resource_arns=result['ARNs'])
-    else:
-        module.exit_json(changed=result['changed'])
+    module.exit_json(changed=result['changed'], results=result)
 
 
 if __name__ == '__main__':
