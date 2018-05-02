@@ -38,6 +38,11 @@
       <<: *aws_connection_info
     register: gateway_instance
 
+  - name: assert changed is True
+    assert:
+      that:
+        - gateway_instance.changed == True
+
   - name: VTL -- Send storage gateway activation code request
     uri:
       url: "http://{{ gateway_instance.instances[0].public_ip_address }}/?activationRegion={{ aws_region }}"
@@ -62,6 +67,12 @@
       <<: *aws_connection_info
     register: vtl_gateway
 
+  - name: assert changed is True
+    assert:
+      that:
+        - vtl_gateway.changed == True
+        - vtl_gateway.results['GatewayARN']
+
   - name: VTL -- Create virtual tape
     aws_storage_gateway:
       state: present
@@ -70,6 +81,66 @@
       tape_size: 536870912000
       tape_barcode: "ANBL{{ barcode }}"
       <<: *aws_connection_info
+    register: vtl_tape
+
+  - name: assert changed is True
+    assert:
+      that:
+        - vtl_tape.changed == True
+        - vtl_tape.results['TapeARN']
+
+  - name: VTL -- No changes to VTL storage gateway
+    aws_storage_gateway:
+      name: test_vtl_gateway
+      state: present
+      resource_type: gateway
+      activation_key: "{{ activation_code.stdout }}"
+      timezone: 'GMT-6:00'
+      gateway_region: "{{ aws_region }}"
+      gateway_type: 'VTL'
+      tape_drive_type: 'IBM-ULT3580-TD5'
+      medium_changer_type: 'AWS-Gateway-VTL'
+      <<: *aws_connection_info
+    register: vtl_gateway
+
+  - name: assert changed is False
+    assert:
+      that:
+        - vtl_gateway.changed == False
+
+  - name: VTL -- No changes to virtual tape
+    aws_storage_gateway:
+      state: present
+      resource_type: tape
+      gateway_arn: "{{ vtl_gateway.results['GatewayARN'] }}"
+      tape_size: 536870912000
+      tape_barcode: "ANBL{{ barcode }}"
+      <<: *aws_connection_info
+    register: vtl_tape
+
+  - name: assert changed is False
+    assert:
+      that:
+        - vtl_tape.changed == False
+
+  - name: VTL -- Update VTL storage gateway
+    aws_storage_gateway:
+      name: test_vtl_gateway
+      state: present
+      resource_type: gateway
+      activation_key: "{{ activation_code.stdout }}"
+      timezone: 'GMT-7:00'
+      gateway_region: "{{ aws_region }}"
+      gateway_type: 'VTL'
+      tape_drive_type: 'IBM-ULT3580-TD5'
+      medium_changer_type: 'AWS-Gateway-VTL'
+      <<: *aws_connection_info
+    register: vtl_gateway
+
+  - name: assert changed is True
+    assert:
+      that:
+        - vtl_gateway.changed == True
 
   always:
   - name: VTL -- Destroy virtual tape

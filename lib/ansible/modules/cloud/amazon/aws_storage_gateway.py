@@ -139,11 +139,13 @@ options:
     - Enables guessing of the MIME type for uploaded objects based on file extensions.
     - Resource type `nfs_file_share`
     type: bool
+    default: 'true'
   requester_pays:
     description:
     - Sets who pays the cost of the request and the data download from the Amazon S3 bucket.
     - Resource type `nfs_file_share`
     type: bool
+    default: 'false'
   volume_size:
     description:
     - The size, in bytes, of the cached volume that you want to create.
@@ -243,7 +245,10 @@ def resource_exists(client, tagger, module, resource_type, params, result):
         try:
             file_share_list = client.list_file_shares()
             for i in file_share_list['FileShareInfoList']:
-                if i['LocationARN'] == params['LocationARN']:
+                file_share_deets = client.describe_nfs_file_shares(
+                    FileShareARNList=[i['FileShareARN']]
+                )
+                if file_share_deets['NFSFileShareInfoList'][0]['LocationARN'] == params['LocationARN']:
                     result['FileShareARN'] = i['FileShareARN']
                     return True
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError):
@@ -286,7 +291,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
     if resource_type == 'gateway':
         try:
             gw_response = client.activate_gateway(**params)
-            time.sleep(5)  # Need a waiter here but it doesn't exist yet in the StorageGateway API
+            time.sleep(10)  # Need a waiter here but it doesn't exist yet in the StorageGateway API
             disks_response = client.list_local_disks(
                 GatewayARN=gw_response['GatewayARN']
             )
@@ -394,11 +399,7 @@ def update_resource(client, module, resource_type, params, result):
             GatewayARN=result['GatewayARN']
         )
 
-        del current_params['GatewayNetworkInterfaces']
-        del current_params['NextUpdateAvailabilityDate']
-        del current_params['LastSoftwareUpdate']
-
-        if params != current_params:
+        if params['GatewayName'] != current_params['GatewayName'] or params['GatewayTimezone'] != current_params['GatewayTimezone']:
             try:
                 response = client.update_gateway_information(
                     GatewayARN=result['GatewayARN'],
@@ -416,29 +417,73 @@ def update_resource(client, module, resource_type, params, result):
             FileShareARNList=[result['FileShareARN']]
         )
 
-        del current_params['NFSFileShareInfoList'][0]['FileShareARN']
-        del current_params['NFSFileShareInfoList'][0]['FileShareId']
-        del current_params['NFSFileShareInfoList'][0]['FileShareStatus']
-        del current_params['NFSFileShareInfoList'][0]['Path']
+        updated_params = {}
+        param_changed = []
+        updated_params['FileShareARN'] = result['FileShareARN']
+        if module.params.get('nfs_defaults'):
+            if params['NFSFileShareDefaults'] != current_params['NFSFileShareInfoList'][0]['NFSFileShareDefaults']
+                updated_params['NFSFileShareDefaults'] = params['NFSFileShareDefaults']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('kms_encrypted'):
+            if params['KMSEncrypted'] != current_params['NFSFileShareInfoList'][0]['KMSEncrypted']:
+                updated_params['KMSEncrypted'] = params['KMSEncrypted']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('kms_key'):
+            if params['KMSKey'] != current_params['NFSFileShareInfoList'][0]['KMSKey']:
+                updated_params['KMSKey'] = params['KMSKey']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('default_storage_class'):
+            if params['DefaultStorageClass'] != current_params['NFSFileShareInfoList'][0]['DefaultStorageClass']:
+                updated_params['DefaultStorageClass'] = params['DefaultStorageClass']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('object_acl'):
+            if params['ObjectACL'] != current_params['NFSFileShareInfoList'][0]['ObjectACL']:
+                updated_params['ObjectACL'] = params['ObjectACL']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('client_list'):
+            if params['ClientList'] != current_params['NFSFileShareInfoList'][0]['ClientList']:
+                updated_params['ClientList'] = params['ClientList']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('squash'):
+            if params['Squash'] != current_params['NFSFileShareInfoList'][0]['Squash']:
+                updated_params['Squash'] = params['Squash']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('read_only'):
+            if params['ReadOnly'] != current_params['NFSFileShareInfoList'][0]['ReadOnly']:
+                updated_params['ReadOnly'] = params['ReadOnly']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('guess_mime_type_enabled'):
+            if params['GuessMIMETypeEnabled'] != current_params['NFSFileShareInfoList'][0]['GuessMIMETypeEnabled']:
+                updated_params['GuessMIMETypeEnabled'] = params['GuessMIMETypeEnabled']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
+        if module.params.get('requester_pays'):
+            if params['RequesterPays'] != current_params['NFSFileShareInfoList'][0]['RequesterPays']:
+                updated_params['RequesterPays'] = params['RequesterPays']
+                param_changed.append(True)
+            else:
+                param_changed.append(False)
 
-        if params['ClientToken']:
-            del params['ClientToken']
-
-        if params != current_params['NFSFileShareInfoList'][0]:
+        if any(param_changed):
             try:
-                response = client.update_nfs_file_share(
-                    FileShareARN=result['FileShareARN'],
-                    KMSEncrypted=params['KMSEncrypted'],
-                    KMSKey=params['KMSKey'],
-                    NFSFileShareDefaults=params['NFSFileShareDefaults'],
-                    DefaultStorageClass=params['DefaultStorageClass'],
-                    ObjectACL=params['ObjectACL'],
-                    ClientList=params['ClientList'],
-                    Squash=params['Squash'],
-                    ReadOnly=params['ReadOnly'],
-                    GuessMIMETypeEnabled=params['GuessMIMETypeEnabled'],
-                    RequesterPays=params['RequesterPays']
-                )
+                response = client.update_nfs_file_share(**updated_params)
                 result['FileShareARN'] = response['FileShareARN']
                 result['changed'] = True
                 return result
@@ -528,7 +573,7 @@ def main():
             'nfs_token': dict(type='str'),
             'nfs_defaults': dict(type='dict'),
             'gateway_arn': dict(type='str'),
-            'kms_encrypted': dict(type='bool'),
+            'kms_encrypted': dict(type='bool', default=False),
             'kms_key': dict(type='str'),
             'iam_role': dict(type='str'),
             'location_arn': dict(type='str'),
@@ -536,9 +581,9 @@ def main():
             'object_acl': dict(type='str', default='private'),
             'client_list': dict(type='list'),
             'squash': dict(type='str', choices=['RootSquash', 'NoSquash', 'AllSquash']),
-            'read_only': dict(type='bool'),
-            'guess_mime_type_enabled': dict(type='bool'),
-            'requester_pays': dict(type='bool'),
+            'read_only': dict(type='bool', default=False),
+            'guess_mime_type_enabled': dict(type='bool', default=True),
+            'requester_pays': dict(type='bool', default=False),
             'volume_size': dict(type='int'),
             'snapshot_id': dict(type='str'),
             'target_name': dict(type='str'),

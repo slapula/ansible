@@ -73,7 +73,7 @@
     # File Gateway (NFS)
     # ============================================================
 
-    #- include_tasks: tasks/file_gateway.yaml
+    - include_tasks: tasks/file_gateway.yaml
 
     # ============================================================
     # Volume Gateway (Stored)
