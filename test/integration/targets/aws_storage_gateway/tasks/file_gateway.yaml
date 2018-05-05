@@ -16,7 +16,7 @@
 
   - name: FILE_S3 -- ensure IAM role exists
     iam_role:
-      name: AwsStorageGatewayTestRole
+      name: "{{ resource_prefix }}-test-storage-iam-role"
       assume_role_policy_document: "{{ lookup('file','storagegateway-trust-policy.json') }}"
       state: present
       create_instance_profile: no
@@ -27,8 +27,8 @@
     iam_policy:
       <<: *aws_connection_info
       iam_type: role
-      iam_name: AwsStorageGatewayTestRole
-      policy_name: AwsStorageGatewayTestRoleS3Policy
+      iam_name: "{{ resource_prefix }}-test-storage-iam-role"
+      policy_name: "{{ resource_prefix }}-test-storage-iam-policy"
       state: present
       policy_json: "{{ lookup( 'template', 's3-bucket-policy.json.j2') }}"
 
@@ -62,9 +62,9 @@
     shell: echo "{{ code_request.url }}" | awk -F'[=&]' '{print $2}'
     register: activation_code
 
-  - name: FILE_S3 -- Activate NFS gateway for testing
+  - name: FILE_S3 -- Activate file gateway for testing
     aws_storage_gateway:
-      name: test_file_gateway
+      name: "{{ resource_prefix }}-test-file-gateway"
       state: present
       resource_type: gateway
       activation_key: "{{ activation_code.stdout }}"
@@ -99,7 +99,7 @@
 
   - name: FILE_S3 -- No changes to NFS gateway
     aws_storage_gateway:
-      name: test_file_gateway
+      name: "{{ resource_prefix }}-test-file-gateway"
       state: present
       resource_type: gateway
       activation_key: "{{ activation_code.stdout }}"
@@ -132,7 +132,7 @@
 
   - name: FILE_S3 -- Update NFS gateway
     aws_storage_gateway:
-      name: test_file_gateway
+      name: "{{ resource_prefix }}-test-file-gateway"
       state: present
       resource_type: gateway
       activation_key: "{{ activation_code.stdout }}"
@@ -176,10 +176,14 @@
       iam_role: "{{ storage_iam_role.arn }}"
       location_arn: "arn:aws:s3:::{{ resource_prefix }}-test-nfs-bucket"
       <<: *aws_connection_info
+    register: removed
+    until: removed is not failed
+    ignore_errors: yes
+    retries: 5
 
   - name: FILE_S3 -- Deactivate NFS gateway
     aws_storage_gateway:
-      name: test_file_gateway
+      name: "{{ resource_prefix }}-test-file-gateway"
       state: absent
       resource_type: gateway
       activation_key: "{{ activation_code.stdout }}"
@@ -196,8 +200,8 @@
     iam_policy:
       <<: *aws_connection_info
       iam_type: role
-      iam_name: AwsStorageGatewayTestRole
-      policy_name: AwsStorageGatewayTestRoleS3Policy
+      iam_name: "{{ resource_prefix }}-test-storage-iam-role"
+      policy_name: "{{ resource_prefix }}-test-storage-iam-policy"
       state: absent
       policy_json: "{{ lookup( 'template', 's3-bucket-policy.json.j2') }}"
     register: removed
@@ -207,7 +211,7 @@
 
   - name: FILE_S3 -- Tear down IAM role
     iam_role:
-      name: AwsStorageGatewayTestRole
+      name: "{{ resource_prefix }}-test-storage-iam-role"
       assume_role_policy_document: "{{ lookup('file','storagegateway-trust-policy.json') }}"
       state: absent
       create_instance_profile: no

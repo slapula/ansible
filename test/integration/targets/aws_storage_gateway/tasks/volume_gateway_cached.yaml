@@ -1,54 +1,169 @@
 ---
-- name: set connection information for all tasks
-  set_fact:
-    aws_connection_info: &aws_connection_info
-      aws_access_key: "{{ aws_access_key }}"
-      aws_secret_key: "{{ aws_secret_key }}"
-      region: "{{ aws_region }}"
-  no_log: true
+- block:
+  - name: CACHED -- set connection information for all tasks
+    set_fact:
+      aws_connection_info: &aws_connection_info
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        region: "{{ aws_region }}"
+    no_log: true
 
-- name: Create storage gateway instance
-  ec2_instance:
-    name: "{{ resource_prefix }}-test-default-vpc"
-    image_id: "{{ ec2_vol_vtl_ami_image[aws_region] }}"
-    tags:
-      TestId: "{{ resource_prefix }}"
-    security_groups: "{{ sg.group_id }}"
-    vpc_subnet_id: "{{ testing_subnet.subnet.id }}"
-    network:
-      assign_public_ip: true
-    instance_type: m4.xlarge
-    volumes:
-      - device_name: /dev/sdb
-        ebs:
-          volume_size: 150
-          delete_on_termination: true
-          volume_type: standard
-      - device_name: /dev/sdc
-        ebs:
-          volume_size: 150
-          delete_on_termination: true
-          volume_type: standard
-    <<: *aws_connection_info
-  register: gateway_instance
+  - name: CACHED -- Create storage gateway instance
+    ec2_instance:
+      name: "{{ resource_prefix }}-test-cached-volume-gateway"
+      image_id: "{{ ec2_vol_vtl_ami_image[aws_region] }}"
+      tags:
+        TestId: "{{ resource_prefix }}"
+      security_groups: "{{ sg.group_id }}"
+      vpc_subnet_id: "{{ testing_subnet.subnet.id }}"
+      network:
+        assign_public_ip: true
+      instance_type: m4.xlarge
+      volumes:
+        - device_name: /dev/sdb
+          ebs:
+            volume_size: 150
+            delete_on_termination: true
+            volume_type: standard
+        - device_name: /dev/sdc
+          ebs:
+            volume_size: 150
+            delete_on_termination: true
+            volume_type: standard
+      <<: *aws_connection_info
+    register: gateway_instance
 
-- name: Send storage gateway activation code request
-  uri:
-    url: "http://{{ gateway_instance.instances[0].public_ip_address }}/?activationRegion={{ aws_region }}"
-  retries: 10
-  register: code_request
+  - name: CACHED -- Send storage gateway activation code request
+    uri:
+      url: "http://{{ gateway_instance.instances[0].public_ip_address }}/?activationRegion={{ aws_region }}"
+    retries: 10
+    register: code_request
 
-- name: Extract activation code from request
-  shell: echo "{{ code_request.url }}" | awk -F'[=&]' '{print $2}'
-  register: activation_code
+  - name: CACHED -- Extract activation code from request
+    shell: echo "{{ code_request.url }}" | awk -F'[=&]' '{print $2}'
+    register: activation_code
 
-- name: remove storage gateway instance
-  ec2_instance:
-    filters:
-      name: "{{ resource_prefix }}-test-default-vpc"
-    state: absent
-    <<: *aws_connection_info
-  register: removed
-  until: removed is not failed
-  ignore_errors: yes
-  retries: 10
+  - name: CACHED -- Activate volume gateway
+    aws_storage_gateway:
+      name: "{{ resource_prefix }}-test-cached-volume-gateway"
+      state: present
+      resource_type: gateway
+      activation_key: "{{ activation_code.stdout }}"
+      timezone: 'GMT-6:00'
+      gateway_region: "{{ aws_region }}"
+      gateway_type: 'CACHED'
+      <<: *aws_connection_info
+    register: volume_gateway
+
+  - name: assert changed is True
+    assert:
+      that:
+        - volume_gateway.changed == True
+        - volume_gateway.results['GatewayARN']
+
+  - name: CACHED -- Create cached volume
+    aws_storage_gateway:
+      state: present
+      resource_type: cached_iscsi_volume
+      gateway_arn: "{{ volume_gateway.results['GatewayARN'] }}"
+      disk_id: "{{ volume_gateway.results['Disks'][1]['DiskId'] }}"
+      preserve_existing_data: false
+      target_name: 'mycachedvolume'
+      volume_size: 107374182400
+      volume_token: 'pT8TJBMnUu6fRYGofOvi'
+      network_interface: "{{ gateway_instance.instances[0].private_ip_address }}"
+      <<: *aws_connection_info
+    register: cached_volume
+
+  - name: assert changed is True
+    assert:
+      that:
+        - cached_volume.changed == True
+        - cached_volume.results['VolumeARN']
+
+  - name: CACHED -- No changes to volume gateway
+    aws_storage_gateway:
+      name: "{{ resource_prefix }}-test-cached-volume-gateway"
+      state: present
+      resource_type: gateway
+      activation_key: "{{ activation_code.stdout }}"
+      timezone: 'GMT-6:00'
+      gateway_region: "{{ aws_region }}"
+      gateway_type: 'CACHED'
+      <<: *aws_connection_info
+    register: volume_gateway
+
+  - name: assert changed is False
+    assert:
+      that:
+        - volume_gateway.changed == False
+
+  - name: CACHED -- No changes to cached volume
+    aws_storage_gateway:
+      state: present
+      resource_type: cached_iscsi_volume
+      gateway_arn: "{{ volume_gateway.results['GatewayARN'] }}"
+      disk_id: "{{ volume_gateway.results['Disks'][1]['DiskId'] }}"
+      preserve_existing_data: false
+      target_name: 'mycachedvolume'
+      volume_size: 107374182400
+      volume_token: 'pT8TJBMnUu6fRYGofOvi'
+      network_interface: "{{ gateway_instance.instances[0].private_ip_address }}"
+      <<: *aws_connection_info
+    register: cached_volume
+
+  - name: assert changed is False
+    assert:
+      that:
+        - cached_volume.changed == False
+
+  - name: CACHED -- Update volume gateway
+    aws_storage_gateway:
+      name: "{{ resource_prefix }}-test-cached-volume-gateway"
+      state: present
+      resource_type: gateway
+      activation_key: "{{ activation_code.stdout }}"
+      timezone: 'GMT-7:00'
+      gateway_region: "{{ aws_region }}"
+      gateway_type: 'CACHED'
+      <<: *aws_connection_info
+    register: volume_gateway
+
+  - name: assert changed is True
+    assert:
+      that:
+        - volume_gateway.changed == True
+        - volume_gateway.results['GatewayARN']
+
+  always:
+  - name: CACHED -- Tear down cached volume
+    aws_storage_gateway:
+      state: absent
+      resource_type: cached_iscsi_volume
+      gateway_arn: "{{ volume_gateway.results['GatewayARN'] }}"
+      disk_id: "{{ volume_gateway.results['Disks'][1]['DiskId'] }}"
+      preserve_existing_data: false
+      target_name: 'mycachedvolume'
+      volume_size: 107374182400
+      volume_token: 'pT8TJBMnUu6fRYGofOvi'
+      network_interface: "{{ gateway_instance.instances[0].private_ip_address }}"
+      <<: *aws_connection_info
+    register: removed
+    until: removed is not failed
+    ignore_errors: yes
+    retries: 5
+
+  - name: CACHED -- Deactivate volume gateway
+    aws_storage_gateway:
+      name: "{{ resource_prefix }}-test-cached-volume-gateway"
+      state: present
+      resource_type: gateway
+      activation_key: "{{ activation_code.stdout }}"
+      timezone: 'GMT-6:00'
+      gateway_region: "{{ aws_region }}"
+      gateway_type: 'CACHED'
+      <<: *aws_connection_info
+    register: removed
+    until: removed is not failed
+    ignore_errors: yes
+    retries: 5

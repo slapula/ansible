@@ -184,6 +184,7 @@ options:
     - Specify this field as true if you want to preserve the data on the local disk. Otherwise, specifying this field as false creates an empty volume.
     - Resource type `stored_iscsi_volume`
     type: bool
+    default: 'true'
   tape_barcode:
     description:
     - The barcode of the virtual tape you are creating.
@@ -218,6 +219,7 @@ this is a test
 RETURN = r'''#'''
 
 import time
+import ast
 
 try:
     import botocore
@@ -236,7 +238,11 @@ def resource_exists(client, tagger, module, resource_type, params, result):
             gateway_list = client.list_gateways()
             for i in gateway_list['Gateways']:
                 if i['GatewayName'] == params['GatewayName']:
+                    disks_response = client.list_local_disks(
+                        GatewayARN=i['GatewayARN']
+                    )
                     result['GatewayARN'] = i['GatewayARN']
+                    result['Disks'] = disks_response['Disks']
                     return True
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError):
             return False
@@ -256,7 +262,7 @@ def resource_exists(client, tagger, module, resource_type, params, result):
 
     if resource_type == 'cached_iscsi_volume' or resource_type == 'stored_iscsi_volume':
         try:
-            resource_exists = tagger.get_resources(
+            vol_exists = tagger.get_resources(
                 TagFilters=[
                     {
                         'Key': 'TargetName',
@@ -268,8 +274,9 @@ def resource_exists(client, tagger, module, resource_type, params, result):
                     },
                 ]
             )
-            if resource_exists['ResourceTagMappingList']:
-                result['VolumeARN'] = resource_exists['ResourceTagMappingList'][0]['ResourceARN']
+            result['VolumeResults'] = vol_exists
+            if vol_exists['ResourceTagMappingList']:
+                result['VolumeData'] = vol_exists['ResourceTagMappingList'][0]
                 return True
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError):
             return False
@@ -291,7 +298,7 @@ def create_resource(client, tagger, module, resource_type, params, result):
     if resource_type == 'gateway':
         try:
             gw_response = client.activate_gateway(**params)
-            time.sleep(10)  # Need a waiter here but it doesn't exist yet in the StorageGateway API
+            time.sleep(15)  # Need a waiter here but it doesn't exist yet in the StorageGateway API
             disks_response = client.list_local_disks(
                 GatewayARN=gw_response['GatewayARN']
             )
@@ -315,11 +322,8 @@ def create_resource(client, tagger, module, resource_type, params, result):
                         GatewayARN=gw_response['GatewayARN'],
                         DiskIds=[disks_response['Disks'][0]['DiskId']]
                     )
-                    vol_response = client.add_working_storage(
-                        GatewayARN=gw_response['GatewayARN'],
-                        DiskIds=[disks_response['Disks'][1]['DiskId']]
-                    )
             result['GatewayARN'] = gw_response['GatewayARN']
+            result['Disks'] = disks_response['Disks']
             result['changed'] = True
             return result
         except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -406,7 +410,11 @@ def update_resource(client, module, resource_type, params, result):
                     GatewayName=params['GatewayName'],
                     GatewayTimezone=params['GatewayTimezone']
                 )
+                disks_response = client.list_local_disks(
+                    GatewayARN=result['GatewayARN']
+                )
                 result['GatewayARN'] = response['GatewayARN']
+                result['Disks'] = disks_response['Disks']
                 result['changed'] = True
                 return result
             except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
@@ -421,7 +429,7 @@ def update_resource(client, module, resource_type, params, result):
         param_changed = []
         updated_params['FileShareARN'] = result['FileShareARN']
         if module.params.get('nfs_defaults'):
-            if params['NFSFileShareDefaults'] != current_params['NFSFileShareInfoList'][0]['NFSFileShareDefaults']
+            if params['NFSFileShareDefaults'] != current_params['NFSFileShareInfoList'][0]['NFSFileShareDefaults']:
                 updated_params['NFSFileShareDefaults'] = params['NFSFileShareDefaults']
                 param_changed.append(True)
             else:
@@ -490,6 +498,10 @@ def update_resource(client, module, resource_type, params, result):
             except (botocore.exceptions.ClientError, botocore.exceptions.BotoCoreError) as e:
                 module.fail_json_aws(e, msg="Couldn't update storage gateway")
 
+    if resource_type == 'cached_iscsi_volume' or resource_type == 'stored_iscsi_volume':
+        result['VolumeARN'] = result['VolumeData']['ResourceARN']
+        result['changed'] = False
+
     return result
 
 
@@ -517,7 +529,7 @@ def delete_resource(client, module, resource_type, params, result):
     if resource_type == 'cached_iscsi_volume' or resource_type == 'stored_iscsi_volume':
         try:
             response = client.delete_volume(
-                VolumeARN=result['VolumeARN']
+                VolumeARN=result['VolumeData']['ResourceARN']
             )
             result['changed'] = True
             return result
@@ -591,7 +603,7 @@ def main():
             'network_interface': dict(type='str'),
             'volume_token': dict(type='str'),
             'disk_id': dict(type='str'),
-            'preserve_existing_data': dict(type='bool'),
+            'preserve_existing_data': dict(type='str', default='true'),
             'tape_barcode': dict(type='str'),
             'tape_size': dict(type='int'),
             'tape_token': dict(type='str'),
@@ -699,7 +711,7 @@ def main():
         if module.params.get('snapshot_id'):
             params['SnapshotId'] = module.params.get('snapshot_id')
         if module.params.get('preserve_existing_data'):
-            params['PreserveExistingData'] = module.params.get('preserve_existing_data')
+            params['PreserveExistingData'] = ast.literal_eval(module.params.get('preserve_existing_data'))
         if module.params.get('target_name'):
             params['TargetName'] = module.params.get('target_name')
         if module.params.get('network_interface'):

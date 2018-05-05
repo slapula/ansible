@@ -79,13 +79,13 @@
     # Volume Gateway (Stored)
     # ============================================================
 
-    #- include_tasks: tasks/volume_gateway_stored.yaml
+    - include_tasks: tasks/volume_gateway_stored.yaml
 
     # ============================================================
     # Volume Gateway (Cached)
     # ============================================================
 
-    #- include_tasks: tasks/volume_gateway_cached.yaml
+    - include_tasks: tasks/volume_gateway_cached.yaml
 
     # ============================================================
     # Tape Gateway (VTL)

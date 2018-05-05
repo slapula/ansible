@@ -55,7 +55,7 @@
 
   - name: VTL -- Activate VTL storage gateway
     aws_storage_gateway:
-      name: test_vtl_gateway
+      name: "{{ resource_prefix }}-test-tape-gateway"
       state: present
       resource_type: gateway
       activation_key: "{{ activation_code.stdout }}"
@@ -91,7 +91,7 @@
 
   - name: VTL -- No changes to VTL storage gateway
     aws_storage_gateway:
-      name: test_vtl_gateway
+      name: "{{ resource_prefix }}-test-tape-gateway"
       state: present
       resource_type: gateway
       activation_key: "{{ activation_code.stdout }}"
@@ -125,7 +125,7 @@
 
   - name: VTL -- Update VTL storage gateway
     aws_storage_gateway:
-      name: test_vtl_gateway
+      name: "{{ resource_prefix }}-test-tape-gateway"
       state: present
       resource_type: gateway
       activation_key: "{{ activation_code.stdout }}"
@@ -158,7 +158,7 @@
 
   - name: VTL -- Deactivate VTL storage gateway
     aws_storage_gateway:
-      name: test_vtl_gateway
+      name: "{{ resource_prefix }}-test-tape-gateway"
       state: absent
       resource_type: gateway
       activation_key: "{{ activation_code.stdout }}"
