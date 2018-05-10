@@ -1,5 +1,48 @@
 ---
 - block:
+  # ============================================================
+  # Parameter Tests
+  # ============================================================
+  - name: test with no parameters
+    aws_storage_gateway:
+    register: result
+    ignore_errors: true
+
+  - name: assert failure when called with no parameters
+    assert:
+      that:
+         - 'result.failed'
+         - 'result.msg.startswith("missing required arguments: resource_type")'
+
+  - name: test for missing parameters (resource_type: gateway)
+    aws_storage_gateway:
+      resource_type: gateway
+    register: result
+    ignore_errors: true
+
+  - name: assert failure when called with no parameters
+    assert:
+      that:
+         - 'result.failed'
+         - 'result.msg.startswith("resource_type is gateway but all of the following are missing: activation_key, name, timezone, gateway_region")'
+
+  - name: test for missing parameters (resource_type: gateway)
+    aws_storage_gateway:
+      resource_type: gateway
+      activation_key: '1234567890'
+    register: result
+    ignore_errors: true
+
+  - name: assert failure when called with missing parameters
+    assert:
+      that:
+         - 'result.failed'
+         - 'result.msg.startswith("resource_type is gateway but all of the following are missing: name, timezone, gateway_region")'
+
+
+  # ============================================================
+  # Resource Tests
+  # ============================================================
   - name: FILE_S3 -- set connection information for all tasks
     set_fact:
       aws_connection_info: &aws_connection_info
