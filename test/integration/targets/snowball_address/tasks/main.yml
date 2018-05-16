@@ -1,0 +1,67 @@
+---
+- block:
+  - name: set connection information for all tasks
+    set_fact:
+      aws_connection_info: &aws_connection_info
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        region: "{{ aws_region }}"
+        #security_token: "{{ security_token }}"
+    no_log: true
+
+  - name: add address for AWS Snowball usage
+    snowball_address:
+      <<: *aws_connection_info
+      name: 'Jed I. Knight'
+      company: "TEST-DONOTUSE-{{ resource_prefix[-8:] }}"
+      street1: '410 Terry Avenue North'
+      city: 'Seattle'
+      state_or_province: 'Washington'
+      country: 'US'
+      postal_code: '98109'
+      phone_number: '555-555-5555'
+    register: result
+
+  - name: assert correct keys are returned
+    assert:
+      that:
+        - result.changed
+        - result.address_id is not none
+
+  - name: no changes to AWS Snowball address
+    snowball_address:
+      <<: *aws_connection_info
+      name: 'Jed I. Knight'
+      company: "TEST-DONOTUSE-{{ resource_prefix[-8:] }}"
+      street1: '410 Terry Avenue North'
+      city: 'Seattle'
+      state_or_province: 'Washington'
+      country: 'US'
+      postal_code: '98109'
+      phone_number: '555-555-5555'
+    register: result
+
+  - name: assert correct keys are returned
+    assert:
+      that:
+        - not result.changed
+        - result.address_id is not none
+
+  - name: add new address to AWS Snowball if parameters change
+    snowball_address:
+      <<: *aws_connection_info
+      name: 'Seth Lorde'
+      company: "TEST-DONOTUSE-{{ resource_prefix[-8:] }}"
+      street1: '410 Terry Avenue North'
+      city: 'Seattle'
+      state_or_province: 'Washington'
+      country: 'US'
+      postal_code: '98109'
+      phone_number: '555-555-5555'
+    register: result
+
+  - name: assert correct keys are returned
+    assert:
+      that:
+        - result.changed
+        - result.address_id is not none
