@@ -44,6 +44,12 @@ options:
     - The name of the database engine to be used for this DB instance.
     choices: ['neptune']
     default: 'neptune'
+  master_username:
+    description:
+    - The name for the master user.
+  master_password:
+    description:
+    - The password for the master user.
   db_security_groups:
     description:
     - A list of DB security groups to associate with this DB instance.
@@ -126,7 +132,6 @@ options:
     description:
     - A value that specifies the order in which an Read Replica is promoted to the primary instance after a failure of the existing primary instance.
     choices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    default: 1
   timezone:
     description:
     - The time zone of the DB instance.
@@ -270,8 +275,10 @@ def main():
             'name': dict(type='str', required=True),
             'state': dict(type='str', choices=['present', 'absent'], default='present'),
             'database_name': dict(type='str'),
-            'instance_class': dict(type='str'),
+            'instance_class': dict(type='str', required=True),
             'db_engine': dict(type='str', choices=['neptune'], default='neptune'),
+            'master_username': dict(type='str'),
+            'master_password': dict(type='str'),
             'db_security_groups': dict(type='list'),
             'vpc_security_groups': dict(type='list'),
             'availability_zone': dict(type='str'),
@@ -284,7 +291,7 @@ def main():
             'license_model': dict(type='str', choices=['license-included', 'bring-your-own-license', 'general-public-license']),
             'iops': dict(type='int'),
             'option_group': dict(type='str'),
-            'publicly_accessible': dict(type='bool'),
+            'publicly_accessible': dict(type='bool', default=False),
             'db_cluster': dict(type='str'),
             'tde_credential_arn': dict(type='str'),
             'tde_credential_password': dict(type='str'),
@@ -293,7 +300,7 @@ def main():
             'monitoring_interval': dict(type='int', choices=[0, 1, 5, 10, 15, 30, 60], default=0),
             'monitoring_role_arn': dict(type='str'),
             'domain_role_arn': dict(type='str'),
-            'promotion_tier': dict(type='int', choices=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], default=1),
+            'promotion_tier': dict(type='int', choices=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]),
             'timezone': dict(type='str'),
             'enable_iam_auth': dict(type='bool', default=False),
             'enable_performance_insights': dict(type='bool', default=False),
@@ -315,9 +322,13 @@ def main():
     params = {}
     if module.params.get('database_name'):
         params['DatabaseName'] = module.params.get('database_name')
-    params['DBCInstanceIdentifier'] = module.params.get('name')
+    params['DBInstanceIdentifier'] = module.params.get('name')
     params['DBInstanceClass'] = module.params.get('instance_class')
     params['Engine'] = module.params.get('db_engine')
+    if module.params.get('master_username'):
+        params['MasterUsername'] = module.params.get('master_username')
+    if module.params.get('master_password'):
+        params['MasterUserPassword'] = module.params.get('master_password')
     if module.params.get('db_security_groups'):
         params['DBSecurityGroups'] = module.params.get('db_security_groups')
     if module.params.get('vpc_security_groups'):

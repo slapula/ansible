@@ -1,0 +1,112 @@
+---
+- name: set connection information for all tasks
+  set_fact:
+    aws_connection_info: &aws_connection_info
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      #security_token: "{{ security_token }}"
+      region: "{{ aws_region }}"
+  no_log: true
+
+- block:
+
+    # ============================================================
+    # Parameter Tests
+    # ============================================================
+
+    - name: test with no parameters
+      aws_neptune_instance:
+      register: result
+      ignore_errors: true
+
+    - name: assert failure when called with no parameters
+      assert:
+        that:
+           - 'result.failed'
+           - 'result.msg.startswith("missing required arguments:")'
+
+    - name: test with missing parameters
+      aws_neptune_instance:
+        name: "{{ resource_prefix }}-test-instance"
+      register: result
+      ignore_errors: true
+
+    - name: assert failure when called with missing parameters
+      assert:
+        that:
+           - 'result.failed'
+           - 'result.msg.startswith("missing required arguments:")'
+
+    # ============================================================
+    # Resource Tests
+    # ============================================================
+
+    - name: Create graph database instance
+      aws_neptune_instance:
+        <<: *aws_connection_info
+        name: "{{ resource_prefix }}-test-instance"
+        state: present
+        instance_class: 'db.m4.large'
+        master_username: 'dbadmin'
+        master_password: 'Test12345'
+        skip_final_snapshot: true
+      register: result
+
+    - name: assert correct keys are returned
+      assert:
+        that:
+          - result.changed
+          - result.db_instance_arn is not none
+
+    - name: No changes to graph database instance
+      aws_neptune_instance:
+        <<: *aws_connection_info
+        name: "{{ resource_prefix }}-test-instance"
+        state: present
+        instance_class: 'db.m4.large'
+        master_username: 'dbadmin'
+        master_password: 'Test12345'
+        skip_final_snapshot: true
+      register: result
+
+    - name: assert correct keys are returned
+      assert:
+        that:
+          - not result.changed
+          - result.db_instance_arn is not none
+
+    - name: Update graph database instance
+      aws_neptune_instance:
+        <<: *aws_connection_info
+        name: "{{ resource_prefix }}-test-instance"
+        state: present
+        instance_class: 'db.m4.large'
+        master_username: 'dbadmin'
+        master_password: 'Test12345'
+        skip_final_snapshot: true
+        auto_minor_version_upgrade: false
+      register: result
+
+    - name: assert correct keys are returned
+      assert:
+        that:
+          - result.changed
+          - result.db_instance_arn is not none
+
+  always:
+
+    # ============================================================
+    # Teardown testing resources
+    # ============================================================
+
+    - name: Destroy graph database instance
+      aws_neptune_instance:
+        <<: *aws_connection_info
+        name: "{{ resource_prefix }}-test-instance"
+        state: absent
+        instance_class: 'db.m4.large'
+        master_username: 'dbadmin'
+        master_password: 'Test12345'
+        skip_final_snapshot: true
+        auto_minor_version_upgrade: false
+      ignore_errors: yes
