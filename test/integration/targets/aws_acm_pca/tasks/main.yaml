@@ -1,0 +1,188 @@
+---
+- name: set connection information for all tasks
+  set_fact:
+    aws_connection_info: &aws_connection_info
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      #security_token: "{{ security_token }}"
+      region: "{{ aws_region }}"
+  no_log: true
+
+- block:
+
+    # ============================================================
+    # Prerequisites
+    # ============================================================
+
+    - name: ensure S3 bucket exists
+      s3_bucket:
+        state: present
+        name: "{{ resource_prefix }}-test-pca-bucket"
+        policy: "{{ lookup( 'template', 'policy.json.j2') }}"
+        <<: *aws_connection_info
+
+    # ============================================================
+    # Parameter Tests
+    # ============================================================
+
+    - name: test with no parameters
+      aws_acm_pca:
+      register: result
+      ignore_errors: true
+
+    - name: assert failure when called with no parameters
+      assert:
+        that:
+           - 'result.failed'
+           - 'result.msg.startswith("missing required arguments:")'
+
+    # ============================================================
+    # Resource Tests
+    # ============================================================
+
+    - name: Create private certificate authority
+      aws_acm_pca:
+        <<: *aws_connection_info
+        state: present
+        ca_configuration:
+          key_algorithm: 'RSA_4096'
+          signing_algorithm: 'SHA384WITHRSA'
+          subject:
+              country: 'US'
+              organization: 'Example Ltd.'
+              organizational_unit: 'IT'
+              name_qualifier: 'example-pca'
+              state: 'WI'
+              common_name: 'example-pca.example.com'
+              serial_number: '1234567890'
+              locality: 'Rhinelander'
+              title: 'Mr.'
+              surname: 'Doe'
+              given_name: 'John'
+              initials: 'JD'
+              pseudonym: 'Johnny'
+              generation_qualifier: 'Sr.' 
+        revocation_configuration:
+          enabled: true
+          expiration: 365
+          s3_bucket: "{{ resource_prefix }}-test-pca-bucket"
+      register: result
+
+    - name: assert correct keys are returned
+      assert:
+        that:
+          - result.changed
+          - result.pca_arn is not none
+
+    - name: No changes to certificate authority
+      aws_acm_pca:
+        <<: *aws_connection_info
+        state: present
+        ca_configuration:
+          key_algorithm: 'RSA_4096'
+          signing_algorithm: 'SHA384WITHRSA'
+          subject:
+              country: 'US'
+              organization: 'Example Ltd.'
+              organizational_unit: 'IT'
+              name_qualifier: 'example-pca'
+              state: 'WI'
+              common_name: 'example-pca.example.com'
+              serial_number: '1234567890'
+              locality: 'Rhinelander'
+              title: 'Mr.'
+              surname: 'Doe'
+              given_name: 'John'
+              initials: 'JD'
+              pseudonym: 'Johnny'
+              generation_qualifier: 'Sr.' 
+        revocation_configuration:
+          enabled: true
+          expiration: 365
+          s3_bucket: "{{ resource_prefix }}-test-pca-bucket"
+      register: result
+
+    - name: assert correct keys are returned
+      assert:
+        that:
+          - not result.changed
+          - result.pca_arn is not none
+
+    - name: Update certificate authority
+      aws_acm_pca:
+        <<: *aws_connection_info
+        state: present
+        ca_configuration:
+          key_algorithm: 'RSA_4096'
+          signing_algorithm: 'SHA384WITHRSA'
+          subject:
+              country: 'US'
+              organization: 'Example Ltd.'
+              organizational_unit: 'IT'
+              name_qualifier: 'example-pca'
+              state: 'WI'
+              common_name: 'example-pca.example.com'
+              serial_number: '1234567890'
+              locality: 'Rhinelander'
+              title: 'Mr.'
+              surname: 'Doe'
+              given_name: 'Joe'
+              initials: 'JD'
+              pseudonym: 'Joseph'
+              generation_qualifier: 'Sr.' 
+        revocation_configuration:
+          enabled: true
+          expiration: 365
+          s3_bucket: "{{ resource_prefix }}-test-pca-bucket"
+      register: result
+
+    - name: assert correct keys are returned
+      assert:
+        that:
+          - result.changed
+          - result.pca_arn is not none
+
+  always:
+
+    # ============================================================
+    # Teardown testing resources
+    # ============================================================
+
+    - name: Destroy certificate authority
+      aws_acm_pca:
+        <<: *aws_connection_info
+        state: absent
+        ca_configuration:
+          key_algorithm: 'RSA_4096'
+          signing_algorithm: 'SHA384WITHRSA'
+          subject:
+              country: 'US'
+              organization: 'Example Ltd.'
+              organizational_unit: 'IT'
+              name_qualifier: 'example-pca'
+              state: 'WI'
+              common_name: 'example-pca.example.com'
+              serial_number: '1234567890'
+              locality: 'Rhinelander'
+              title: 'Mr.'
+              surname: 'Doe'
+              given_name: 'John'
+              initials: 'JD'
+              pseudonym: 'Johnny'
+              generation_qualifier: 'Sr.' 
+        revocation_configuration:
+          enabled: true
+          expiration: 365
+          s3_bucket: "{{ resource_prefix }}-test-pca-bucket"
+      ignore_errors: yes
+
+    - name: Tear down S3 bucket
+      s3_bucket:
+        state: absent
+        name: "{{ resource_prefix }}-test-pca-bucket"
+        policy: "{{ lookup( 'template', 'policy.json.j2') }}"
+        force: yes
+        <<: *aws_connection_info
+      register: removed
+      until: removed is not failed
+      ignore_errors: yes

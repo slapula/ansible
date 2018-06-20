@@ -179,6 +179,47 @@ waf_data = {
     }
 }
 
+pca_data = {
+    "version": 2,
+    "waiters": {
+        "PcaAvailable": {
+            "delay": 5,
+            "maxAttempts": 25,
+            "operation": "DescribeCertificateAuthority",
+            "acceptors": [
+                {
+                    "matcher": "path",
+                    "expected": True,
+                    "argument": "CertificateAuthority.Status == 'PENDING_CERTIFICATE'",
+                    "state": "success"
+                },
+                {
+                    "matcher": "error",
+                    "expected": "ResourceNotFoundException",
+                    "state": "retry"
+                },
+            ]
+        },
+        "PcaDeleted": {
+            "delay": 5,
+            "maxAttempts": 25,
+            "operation": "DescribeCertificateAuthority",
+            "acceptors": [
+                {
+                    "matcher": "path",
+                    "expected": True,
+                    "argument": "CertificateAuthority",
+                    "state": "retry"
+                },
+                {
+                    "matcher": "error",
+                    "expected": "ResourceNotFoundException",
+                    "state": "success"
+                },
+            ]
+        }
+    }
+}
 
 def ec2_model(name):
     ec2_models = core_waiter.WaiterModel(waiter_config=ec2_data)
@@ -188,6 +229,10 @@ def ec2_model(name):
 def waf_model(name):
     waf_models = core_waiter.WaiterModel(waiter_config=waf_data)
     return waf_models.get_waiter(name)
+
+def pca_model(name):
+    pca_models = core_waiter.WaiterModel(waiter_config=pca_data)
+    return pca_models.get_waiter(name)
 
 
 waiters_by_name = {
@@ -250,6 +295,18 @@ waiters_by_name = {
         waf_model('ChangeTokenInSync'),
         core_waiter.NormalizedOperationMethod(
             waf.get_change_token_status
+        )),
+    ('ACMPCA', 'pca_available'): lambda pca: core_waiter.Waiter(
+        'pca_available',
+        pca_model('PcaAvailable'),
+        core_waiter.NormalizedOperationMethod(
+            pca.describe_certificate_authority
+        )),
+    ('ACMPCA', 'pca_deleted'): lambda pca: core_waiter.Waiter(
+        'pca_deleted',
+        pca_model('PcaDeleted'),
+        core_waiter.NormalizedOperationMethod(
+            pca.describe_certificate_authority
         )),
 }
 
